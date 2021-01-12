@@ -1,8 +1,20 @@
 import pandas as pd
 import config
 # import datetime
-
+# import argparse
+# import textwrap
+import logging
 from sqlalchemy import create_engine
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn import linear_model
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+from sklearn.linear_model import Lasso
+
+logging.basicConfig()
+logger = logging.getLogger(__name__)
 
 
 def read_sql(db_connection_str):
@@ -14,6 +26,7 @@ def read_sql(db_connection_str):
 
     query = "SELECT timestamp, CAST(value AS DECIMAL(8,1)) AS value FROM history " \
             "WHERE device = 'Gosund_Waschmaschine' AND value > 0 " \
+            "AND timestamp < '2025-01-10' " \
             "ORDER BY timestamp ASC"
     # AND timestamp BETWEEN '{}' AND '{}' " \
     # .format(date_start, date_end)
@@ -45,7 +58,7 @@ def split_into_session_df(df_src):
     """
     DataFrame mit allen Waschvorgängen auftrennen und unrelevante Messwerte verwerfen:
     """
-    df_waschvorgaenge = []
+    df_sessions = []
     watt = []
     ende = False
     for index, row in df_src.iterrows():
@@ -65,16 +78,27 @@ def split_into_session_df(df_src):
                 print('Rest:', rest, len(rest))
                 print('')
 
-                waschvorgang_dict = {'watt': watt, 'betrieb': betrieb, 'rest': rest}
-                df_waschvorgaenge.append(pd.DataFrame(waschvorgang_dict))
+                session_dict = {'watt': watt, 'betrieb': betrieb, 'rest': rest}
+                df_sessions.append(pd.DataFrame(session_dict))
 
             watt = []
             ende = True
 
-    return df_waschvorgaenge
+    return df_sessions
+
+
+# def commandline_args():
+#     ap = argparse.ArgumentParser()
+#     ap.add_argument("session_file", help="Load session file")
+#     ap.add_argument("ifp_csv_file", help="Input file: Airbus IFP csv file")
+#     # ap.add_argument("-p", "--predict", default=None, help="Predict altitude")
+#     ap.formatter_class = argparse.RawDescriptionHelpFormatter
+#     ap.description = textwrap.dedent(__doc__)
+#     return vars(ap.parse_args())
 
 
 if __name__ == '__main__':
+    # args = commandline_args()
     if config.use_sql_cache:
         print("Lese Daten aus SQL-Cache:", config.sql_cache_file)
         df_sql = pd.read_pickle(config.sql_cache_file)
@@ -83,15 +107,43 @@ if __name__ == '__main__':
         df_sql = read_sql(config.db_connection_str)
         df_sql.to_pickle('df_sql.pkl')
 
-    df_waschvorgaenge = split_into_session_df(df_sql)
+    print(df_sql)
+    df_sessions = split_into_session_df(df_sql)
 
     cols_features = ['betrieb'] + list(range(config.n_features))
     cols_label = ['rest']
-    df_train = pd.DataFrame(columns=cols_features+cols_label)
+    df = pd.DataFrame(columns=cols_features+cols_label)
 
-    for df_waschvorgang in df_waschvorgaenge:
-        data = split_into_train_df(df_waschvorgang, config.n_features)
+    for df_session in df_sessions:
+        data = split_into_train_df(df_session, config.n_features)
         df_tmp = pd.DataFrame(data, columns=cols_features+cols_label)
-        df_train = df_train.append(df_tmp, ignore_index=True)
-    print(df_train)
-    print('Anz. Waschvorgänge:', len(df_waschvorgaenge))
+        df = df.append(df_tmp, ignore_index=True)
+    print(df)
+    print('Anz. Waschvorgänge:', len(df_sessions))
+
+    df_features = df[cols_features]
+    df_label = df[cols_label]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        df_features, df_label, test_size=0.2, random_state=42)
+
+    # Fit the model:
+    # model = make_pipeline(
+    #     StandardScaler(),
+    #     PolynomialFeatures(degree=6),
+    #     # linear_model.LinearRegression()
+    #     Lasso()
+    # )
+    from sklearn.ensemble import ExtraTreesRegressor
+    model = make_pipeline(
+        # StandardScaler(),
+                          ExtraTreesRegressor(random_state=42))
+
+    # model = make_pipeline(StandardScaler(), PolynomialFeatures(degree=2), Lasso())
+    model.fit(X_train, y_train.values.ravel())
+    # model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+
+    print('Score: ', model.score(X_test, y_test))
+    print('MSE:   ', mse)
