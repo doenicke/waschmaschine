@@ -90,8 +90,7 @@ def split_into_session_df(df_src):
 # def commandline_args():
 #     ap = argparse.ArgumentParser()
 #     ap.add_argument("session_file", help="Load session file")
-#     ap.add_argument("ifp_csv_file", help="Input file: Airbus IFP csv file")
-#     # ap.add_argument("-p", "--predict", default=None, help="Predict altitude")
+#     # ap.add_argument("-p", "--predict", default=None, help="Predict")
 #     ap.formatter_class = argparse.RawDescriptionHelpFormatter
 #     ap.description = textwrap.dedent(__doc__)
 #     return vars(ap.parse_args())
