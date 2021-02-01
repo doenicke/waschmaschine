@@ -121,28 +121,45 @@ if __name__ == '__main__':
     print('Anz. Waschvorgänge:', len(df_sessions))
 
     df_features = df[cols_features]
-    df_label = df[cols_label]
+    df_label = df[cols_label].values
 
     X_train, X_test, y_train, y_test = train_test_split(
         df_features, df_label, test_size=0.2, random_state=42)
 
-    # Fit the model:
-    # model = make_pipeline(
-    #     StandardScaler(),
-    #     PolynomialFeatures(degree=6),
-    #     # linear_model.LinearRegression()
-    #     Lasso()
-    # )
-    from sklearn.ensemble import ExtraTreesRegressor
-    model = make_pipeline(
-        # StandardScaler(),
-                          ExtraTreesRegressor(random_state=42))
+    # https://www.kaggle.com/junkal/selecting-the-best-regression-model
 
-    # model = make_pipeline(StandardScaler(), PolynomialFeatures(degree=2), Lasso())
-    model.fit(X_train, y_train.values.ravel())
-    # model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-    mse = mean_squared_error(y_test, y_pred)
+    from sklearn.feature_selection import RFE
+    from sklearn.model_selection import train_test_split
+    from sklearn.model_selection import cross_val_score
+    from sklearn.model_selection import KFold
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
 
-    print('Score: ', model.score(X_test, y_test))
-    print('MSE:   ', mse)
+    from sklearn.linear_model import LinearRegression
+    from sklearn.linear_model import Lasso
+    from sklearn.linear_model import ElasticNet
+    from sklearn.tree import DecisionTreeRegressor
+    from sklearn.neighbors import KNeighborsRegressor
+    from sklearn.ensemble import GradientBoostingRegressor
+
+    pipelines = []
+    pipelines.append(('ScaledLR', Pipeline([('Scaler', StandardScaler()), ('LR', LinearRegression())])))
+    pipelines.append(('ScaledLASSO', Pipeline([('Scaler', StandardScaler()), ('LASSO', Lasso())])))
+    pipelines.append(('ScaledEN', Pipeline([('Scaler', StandardScaler()), ('EN', ElasticNet())])))
+    pipelines.append(('ScaledKNN', Pipeline([('Scaler', StandardScaler()), ('KNN', KNeighborsRegressor())])))
+    pipelines.append(('ScaledCART', Pipeline([('Scaler', StandardScaler()), ('CART', DecisionTreeRegressor())])))
+    pipelines.append(('ScaledGBM', Pipeline([('Scaler', StandardScaler()), ('GBM', GradientBoostingRegressor())])))
+
+    results = []
+    names = []
+    for name, model in pipelines:
+        # kfold = KFold(n_splits=10, random_state=21)
+        # kfold = KFold(n_splits=10, random_state=None)
+        kfold = KFold(n_splits=10, random_state=21, shuffle=True)
+        cv_results = cross_val_score(model, X_train, y_train, cv=kfold, scoring='neg_mean_squared_error')
+        results.append(cv_results)
+        names.append(name)
+        msg = "%s: %f (%f)" % (name, cv_results.mean(), cv_results.std())
+        print(msg)
+
+    # KNN
