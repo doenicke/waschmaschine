@@ -5,13 +5,9 @@ import config
 # import textwrap
 import logging
 from sqlalchemy import create_engine
-from sklearn.preprocessing import PolynomialFeatures
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn import linear_model
+from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
-from sklearn.linear_model import Lasso
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -72,7 +68,7 @@ def split_into_session_df(df_src):
                 watt.append(value)
                 watt = [0]*config.n_features + watt
                 rest = list(range(len(watt) - 1, -1, -1))
-                betrieb = list(range(0, len(watt)))
+                betrieb = [0]*(config.n_features) + list(range(0, len(watt)-config.n_features))
                 print('Watt:', watt, len(watt))
                 print('Betrieb:', betrieb, len(betrieb))
                 print('Rest:', rest, len(rest))
@@ -86,6 +82,20 @@ def split_into_session_df(df_src):
 
     return df_sessions
 
+
+def model_test(df_x, df_y):
+    X_train, X_test, y_train, y_test = train_test_split(
+        df_x, df_y, test_size=0.2, random_state=42)
+
+    print("ExtraTreesRegressor")
+    model = ExtraTreesRegressor(random_state=42)
+    model.fit(X_train, y_train.values.ravel())
+    # model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+
+    print('Score: ', model.score(X_test, y_test))
+    print('MSE:   ', mse)
 
 # def commandline_args():
 #     ap = argparse.ArgumentParser()
@@ -108,7 +118,6 @@ if __name__ == '__main__':
 
     print(df_sql)
     df_sessions = split_into_session_df(df_sql)
-    print("df_sessions[0]", df_sessions[0])
 
     cols_features = ['betrieb'] + list(range(config.n_features))
     cols_label = ['rest']
@@ -123,26 +132,10 @@ if __name__ == '__main__':
 
     df_features = df[cols_features]
     df_label = df[cols_label]
+    model_test(df_features, df_label)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        df_features, df_label, test_size=0.2, random_state=42)
+    model = ExtraTreesRegressor(random_state=42)
+    model.fit(df_features, df_features)
 
-    # Fit the model:
-    model = make_pipeline(
-        StandardScaler(),
-        PolynomialFeatures(degree=6),
-        # linear_model.LinearRegression()
-        Lasso()
-    )
-    # print("ExtraTreesRegressor")
-    # from sklearn.ensemble import ExtraTreesRegressor
-    # model = ExtraTreesRegressor(random_state=42)
 
-    # model = make_pipeline(StandardScaler(), PolynomialFeatures(degree=2), Lasso())
-    model.fit(X_train, y_train.values.ravel())
-    # model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-    mse = mean_squared_error(y_test, y_pred)
 
-    print('Score: ', model.score(X_test, y_test))
-    print('MSE:   ', mse)
