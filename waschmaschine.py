@@ -68,9 +68,9 @@ def split_into_session_df(df_src):
             ende = False
         elif value <= 1 and not ende:
 
-            if len(watt) > 20:  # Nur Vorgänge berücksichtigen, die länger als 20 Minuten dauern
+            if len(watt) > config.duration_min:  # Nur Vorgänge berücksichtigen, die länger als x Minuten dauern
                 watt.append(value)
-                watt = [0] + watt
+                watt = [0]*config.n_features + watt
                 rest = list(range(len(watt) - 1, -1, -1))
                 betrieb = list(range(0, len(watt)))
                 print('Watt:', watt, len(watt))
@@ -108,6 +108,7 @@ if __name__ == '__main__':
 
     print(df_sql)
     df_sessions = split_into_session_df(df_sql)
+    print("df_sessions[0]", df_sessions[0])
 
     cols_features = ['betrieb'] + list(range(config.n_features))
     cols_label = ['rest']
@@ -127,16 +128,15 @@ if __name__ == '__main__':
         df_features, df_label, test_size=0.2, random_state=42)
 
     # Fit the model:
-    # model = make_pipeline(
-    #     StandardScaler(),
-    #     PolynomialFeatures(degree=6),
-    #     # linear_model.LinearRegression()
-    #     Lasso()
-    # )
-    from sklearn.ensemble import ExtraTreesRegressor
     model = make_pipeline(
-        # StandardScaler(),
-                          ExtraTreesRegressor(random_state=42))
+        StandardScaler(),
+        PolynomialFeatures(degree=6),
+        # linear_model.LinearRegression()
+        Lasso()
+    )
+    # print("ExtraTreesRegressor")
+    # from sklearn.ensemble import ExtraTreesRegressor
+    # model = ExtraTreesRegressor(random_state=42)
 
     # model = make_pipeline(StandardScaler(), PolynomialFeatures(degree=2), Lasso())
     model.fit(X_train, y_train.values.ravel())
