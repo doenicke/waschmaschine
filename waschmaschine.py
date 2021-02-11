@@ -1,9 +1,14 @@
+"""Waschmaschine
+Restlaufzeit vorhersagen
+"""
+import pickle
 import pandas as pd
 import config
 # import datetime
-# import argparse
-# import textwrap
+import argparse
+import textwrap
 import logging
+import os
 from sqlalchemy import create_engine
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.model_selection import train_test_split
@@ -22,9 +27,10 @@ def read_sql(db_connection_str):
 
     query = "SELECT timestamp, CAST(value AS DECIMAL(8,1)) AS value FROM history " \
             "WHERE device = 'Gosund_Waschmaschine' AND value > 0 " \
-            "AND timestamp < '2025-01-10' " \
             "ORDER BY timestamp ASC"
-    # AND timestamp BETWEEN '{}' AND '{}' " \
+
+    #    "AND timestamp < '2025-01-10' " \
+    #    "AND timestamp BETWEEN '{}' AND '{}' " \
     # .format(date_start, date_end)
 
     return pd.read_sql(query, con=db_connection)
@@ -83,12 +89,16 @@ def split_into_session_df(df_src):
     return df_sessions
 
 
+def run_model():
+    print("ExtraTreesRegressor")
+    return ExtraTreesRegressor(random_state=42, n_estimators=22, max_depth=9)
+
+
 def model_test(df_x, df_y):
     X_train, X_test, y_train, y_test = train_test_split(
         df_x, df_y, test_size=0.2, random_state=42)
 
-    print("ExtraTreesRegressor")
-    model = ExtraTreesRegressor(random_state=42)
+    model = run_model()
     model.fit(X_train, y_train.values.ravel())
     # model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
@@ -97,27 +107,10 @@ def model_test(df_x, df_y):
     print('Score: ', model.score(X_test, y_test))
     print('MSE:   ', mse)
 
-# def commandline_args():
-#     ap = argparse.ArgumentParser()
-#     ap.add_argument("session_file", help="Load session file")
-#     # ap.add_argument("-p", "--predict", default=None, help="Predict")
-#     ap.formatter_class = argparse.RawDescriptionHelpFormatter
-#     ap.description = textwrap.dedent(__doc__)
-#     return vars(ap.parse_args())
 
-
-if __name__ == '__main__':
-    # args = commandline_args()
-    if config.use_sql_cache:
-        print("Lese Daten aus SQL-Cache:", config.sql_cache_file)
-        df_sql = pd.read_pickle(config.sql_cache_file)
-    else:
-        print("Lese Daten aus MySQL-Tabelle.")
-        df_sql = read_sql(config.db_connection_str)
-        df_sql.to_pickle('df_sql.pkl')
-
-    print(df_sql)
-    df_sessions = split_into_session_df(df_sql)
+def get_model(df):
+    print(df)
+    df_sessions = split_into_session_df(df)
 
     cols_features = ['betrieb'] + list(range(config.n_features))
     cols_label = ['rest']
@@ -128,14 +121,42 @@ if __name__ == '__main__':
         df_tmp = pd.DataFrame(data, columns=cols_features+cols_label)
         df = df.append(df_tmp, ignore_index=True)
     print(df)
-    print('Anz. Waschvorgänge:', len(df_sessions))
+    print('Count washing sessions:', len(df_sessions))
 
     df_features = df[cols_features]
     df_label = df[cols_label]
     model_test(df_features, df_label)
 
-    model = ExtraTreesRegressor(random_state=42)
+    model = run_model()
     model.fit(df_features, df_features)
+    return model
 
 
+def commandline_args():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('-q', '--query_sql', action='store_true', help="Dump SQL data into pickle file")
+    ap.add_argument('-t', '--train', action='store_true', help="Train the model and store it")
+    ap.formatter_class = argparse.RawDescriptionHelpFormatter
+    ap.description = textwrap.dedent(__doc__)
+    return vars(ap.parse_args())
 
+
+if __name__ == '__main__':
+    args = commandline_args()
+    if args['query_sql']:
+        print("Catching data from SQL database...")
+        df = read_sql(config.db_connection_str)
+        print("Writing pickle file as local cache...", end='')
+        df.to_pickle(config.sql_cache_file)
+        print(" {} ({:.1f} kB)".format(config.sql_cache_file, os.path.getsize(config.sql_cache_file)/1024))
+
+    elif args['train']:
+        print("Reading data from local cache:", config.sql_cache_file)
+        model = get_model(pd.read_pickle(config.sql_cache_file))
+        print("Dumping model into file...", end='')
+        pickle.dump(model, open(config.model_file, 'wb'))
+        print(" {} ({:.1f} MB)".format(config.model_file, os.path.getsize(config.model_file)/1024/1024))
+
+    else:
+        print("Prediction...")
+        model = pickle.load(open(config.model_file, 'rb'))
