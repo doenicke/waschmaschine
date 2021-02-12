@@ -160,3 +160,4 @@ if __name__ == '__main__':
     else:
         print("Prediction...")
         model = pickle.load(open(config.model_file, 'rb'))
+
