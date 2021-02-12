@@ -9,6 +9,7 @@ Predict the remaining washing time.
 * Reads watt values from MySQL db and writes into pkl file
 * Determine washing sessions (cleaning and clustering the records)
 * Train a model
+* Store the model in file (pkl)
 
 Open (not yet implemented):
 
