@@ -91,6 +91,9 @@ def split_into_session_df(df_src):
 
 def run_model():
     print("ExtraTreesRegressor")
+    # REMARK
+    # Storing the model: Following settings reduce the size of pickle file dramatically:
+    # n_estimators, max_depth
     return ExtraTreesRegressor(random_state=42, n_estimators=22, max_depth=9)
 
 
@@ -135,7 +138,7 @@ def get_model(df):
 def commandline_args():
     ap = argparse.ArgumentParser()
     ap.add_argument('-q', '--query_sql', action='store_true', help="Dump SQL data into pickle file")
-    ap.add_argument('-t', '--train', action='store_true', help="Train the model and store it")
+    ap.add_argument('-t', '--train', action='store_true', help="Train the model and store it in pickle file")
     ap.formatter_class = argparse.RawDescriptionHelpFormatter
     ap.description = textwrap.dedent(__doc__)
     return vars(ap.parse_args())
@@ -144,14 +147,14 @@ def commandline_args():
 if __name__ == '__main__':
     args = commandline_args()
     if args['query_sql']:
-        print("Catching data from SQL database...")
+        print("Reading data from MySQL database...")
         df = read_sql(config.db_connection_str)
         print("Writing pickle file as local cache...", end='')
         df.to_pickle(config.sql_cache_file)
         print(" {} ({:.1f} kB)".format(config.sql_cache_file, os.path.getsize(config.sql_cache_file)/1024))
 
     elif args['train']:
-        print("Reading data from local cache:", config.sql_cache_file)
+        print("Reading data from local cache...", config.sql_cache_file)
         model = get_model(pd.read_pickle(config.sql_cache_file))
         print("Dumping model into file...", end='')
         pickle.dump(model, open(config.model_file, 'wb'))
@@ -160,4 +163,4 @@ if __name__ == '__main__':
     else:
         print("Prediction...")
         model = pickle.load(open(config.model_file, 'rb'))
-
+        # Todo: prediction
