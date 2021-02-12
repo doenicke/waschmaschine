@@ -1,6 +1,5 @@
 # waschmaschine
 
-Restlaufzeit der Waschmaschine vorhersagen
 Predict the remaining washing time.
 
 ![grafana](grafana.png)
