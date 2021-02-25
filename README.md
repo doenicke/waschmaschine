@@ -6,7 +6,9 @@ Predict the remaining washing time.
 
 ## Background
 
-Power is measured (every 60 seconds) e.g. by [Gosund SP1](https://templates.blakadder.com/gosund_SP1.html) or SP112. Tasmota firmware is flashed onto the ESP chip and data is provided via MQTT. I use [FHEM](https://fhem.de/) as home automation server.
+Power is measured (every 60 seconds) e.g. by [Gosund SP1](https://templates.blakadder.com/gosund_SP1.html) or SP112. 
+Tasmota firmware is flashed onto the ESP chip and data is provided via MQTT. 
+I use [FHEM](https://fhem.de/) as home automation server.
 
 ## Features
 
