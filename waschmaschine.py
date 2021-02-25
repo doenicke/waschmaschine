@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class Waschmaschine:
+
     def read_sql(self):
         """Read raw Watt data from MySQL database and write it into pickle cache file."""
         print("Reading data from MySQL database...")
