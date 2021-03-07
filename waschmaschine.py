@@ -58,10 +58,12 @@ class Waschmaschine:
         self.df_raw.to_pickle(self.cache_filename)
         print(" {} ({:.1f} kB)".format(self.cache_filename, os.path.getsize(self.cache_filename) / 1024))
 
-    def split_into_sessions(self, verbose=False):
+    def split_into_sessions(self, duration_min=0, verbose=False):
         """
         DataFrame mit allen Waschvorgängen auftrennen und unrelevante Messwerte verwerfen:
         """
+        if duration_min == 0:
+            duration_min = config.duration_min
         df_sessions = []
         watt = []
         ende = False
@@ -72,7 +74,7 @@ class Waschmaschine:
                 ende = False
             elif value <= 1 and not ende:
 
-                if len(watt) > config.duration_min:  # Nur Vorgänge berücksichtigen, die länger als x Minuten dauern
+                if len(watt) > duration_min:  # Nur Vorgänge berücksichtigen, die länger als x Minuten dauern
                     watt.append(value)
                     watt = [0] * config.n_features + watt
                     rest = list(range(len(watt) - 1, -1, -1))
@@ -91,6 +93,10 @@ class Waschmaschine:
 
         return df_sessions
 
+    def get_last_session(self):
+        df_sessions = self.split_into_sessions(duration_min=2, verbose=True)
+        return df_sessions[-1]
+
     @staticmethod
     def transform_session(df_src, n_features):
         """
@@ -105,7 +111,7 @@ class Waschmaschine:
         data_list = []
         for row in range(len(df_src) - n_features + 1):
             df_tmp = df_src.iloc[row:row + n_features]
-            # print(df)
+            # print(df_tmp)
             row = [list(df_tmp['betrieb'])[-1]] + list(df_tmp['watt']) + [list(df_tmp['rest'])[-1]]
             # print(row)
             data_list.append(row)
@@ -156,6 +162,13 @@ class Waschmaschine:
         self.model = regr
         return self.model
 
+    @staticmethod
+    def get_test_data():
+        df = wm.load_cache_file()
+        df = df[(df['timestamp'] >= '2021-02-27 00:00:00')
+                & (df['timestamp'] <= '2021-02-27 11:30:00')]
+        return df
+
 
 class MainApp(object):
     def __init__(self):
@@ -191,4 +204,17 @@ if __name__ == '__main__':
     # date_start = datetime.date(2021, 1, 8)
     # date_end = datetime.date(2021, 1, 9)
 
-    fire.Fire(MainApp)
+    # fire.Fire(MainApp)
+
+    wm = Waschmaschine()
+    wm_runtime = Waschmaschine()
+    wm_runtime.df_raw = wm.get_test_data()
+    print(wm_runtime.df_raw)
+    df = wm_runtime.get_last_session()
+    data = wm_runtime.transform_session(df, config.n_features)
+    data_x = data # [data[0], data[1]]
+    print(data_x)
+
+    cols_features = ['betrieb'] + list(range(config.n_features))
+    df_x = pd.DataFrame(data_x, columns=cols_features)
+    print(df_x)
