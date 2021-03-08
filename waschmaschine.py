@@ -4,13 +4,11 @@ Predict the resuming time
 """
 import pandas as pd
 import config
-# import datetime
+from datetime import datetime, timedelta
 import logging
 import os
 import pickle
 from sqlalchemy import create_engine
-import datetime
-import fire
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import train_test_split
@@ -23,7 +21,8 @@ class Waschmaschine:
     def __init__(self):
         self.db_connection = None
         self.cache_filename = config.db_cache_file
-        self.df_raw = None
+        self.df_orig = None
+        self.sessions = []  # list of Dataframes
         self.model = None
         self.model_filename = config.model_file
 
@@ -44,61 +43,73 @@ class Waschmaschine:
         query += "ORDER BY timestamp ASC"
 
         print("Reading data from MySQL database...")
+        print(query)
         self.establish_db_connection()
-        self.df_raw = pd.read_sql(query, con=self.db_connection)
-        return self.df_raw
+        self.df_orig = pd.read_sql(query, con=self.db_connection)
+        return self.df_orig
 
     def load_cache_file(self):
         print(f"Reading data from cache file {self.cache_filename}...")
-        self.df_raw = pd.read_pickle(self.cache_filename)
-        return self.df_raw
+        self.df_orig = pd.read_pickle(self.cache_filename)
+        return self.df_orig
 
     def write_cache_file(self):
         print("Writing cache file...", end='')
-        self.df_raw.to_pickle(self.cache_filename)
+        self.df_orig.to_pickle(self.cache_filename)
         print(" {} ({:.1f} kB)".format(self.cache_filename, os.path.getsize(self.cache_filename) / 1024))
 
-    def split_into_sessions(self, duration_min=0, verbose=False):
-        """
-        DataFrame mit allen Waschvorgängen auftrennen und unrelevante Messwerte verwerfen:
-        """
-        if duration_min == 0:
-            duration_min = config.duration_min
-        df_sessions = []
-        watt = []
-        ende = False
-        for index, row in self.df_raw.iterrows():
-            value = row['value']
-            if value > 1:
-                watt.append(value)
-                ende = False
-            elif value <= 1 and not ende:
+    def split_into_sessions(self):
+        sessions = []
+        session = []
 
-                if len(watt) > duration_min:  # Nur Vorgänge berücksichtigen, die länger als x Minuten dauern
-                    watt.append(value)
-                    watt = [0] * config.n_features + watt
-                    rest = list(range(len(watt) - 1, -1, -1))
-                    betrieb = [0] * config.n_features + list(range(0, len(watt) - config.n_features))
-                    if verbose:
-                        print('Watt:', watt, len(watt))
-                        print('Betrieb:', betrieb, len(betrieb))
-                        print('Rest:', rest, len(rest))
-                        print('')
+        for index, row in self.df_orig.iterrows():
+            if row['value'] > config.standby_watt:
+                session.append(row)
+            elif len(session) > 0:
+                sessions.append(pd.DataFrame(session))
+                session = []
 
-                    session_dict = {'watt': watt, 'betrieb': betrieb, 'rest': rest}
-                    df_sessions.append(pd.DataFrame(session_dict))
+        if len(session) > 0:
+            sessions.append(pd.DataFrame(session))
+        self.sessions = sessions
+        return sessions
 
-                watt = []
-                ende = True
+    def drop_short_sessions(self):
+        sessions_new = []
+        for session in self.sessions:
+            duration = len(session)
+            if duration >= config.duration_min:
+                sessions_new.append(session)
+        self.sessions = sessions_new
+        return sessions_new
 
-        return df_sessions
+    def mean_duration(self):
+        m = 0
+        for session in self.sessions:
+            m += len(session)
+        return m / len(self.sessions)
 
-    def get_last_session(self):
-        df_sessions = self.split_into_sessions(duration_min=2, verbose=True)
-        return df_sessions[-1]
+    def list_sessions(self):
+        for idx, session in enumerate(self.sessions):
+            print(idx, session.iloc[0, 0], len(session))
+
+    def get_running_session(self, src='sql'):
+        if src == 'sql':
+            self.establish_db_connection()
+            from_timestamp = datetime.now() - timedelta(hours=3)
+            # from_str = from_timestamp.strftime('%Y-%m-%d %H:%M:%S')
+            self.read_from_sql(date_from=from_timestamp)
+        else:
+            df = self.load_cache_file()
+            self.df_orig = df[(df['timestamp'] >= '2021-02-27 00:00:00')
+                              & (df['timestamp'] <= '2021-02-27 11:30:00')]
+
+        self.split_into_sessions()
+        if len(self.sessions) > 0:
+            return self.sessions[-1]
 
     @staticmethod
-    def transform_session(df_src, n_features):
+    def transform_session(df_src, n_features=0):
         """
         Jeder Waschvorgang wird in n Abschnitte unterteilt.
         Jeder Abschnitt ist dann n Minuten lang.
@@ -108,6 +119,9 @@ class Waschmaschine:
         :param n_features: Anzahl der Features mit Messwerten
         :return:
         """
+        if n_features == 0:
+            n_features = config.n_features
+
         data_list = []
         for row in range(len(df_src) - n_features + 1):
             df_tmp = df_src.iloc[row:row + n_features]
@@ -162,59 +176,23 @@ class Waschmaschine:
         self.model = regr
         return self.model
 
-    @staticmethod
-    def get_test_data():
-        df = wm.load_cache_file()
-        df = df[(df['timestamp'] >= '2021-02-27 00:00:00')
-                & (df['timestamp'] <= '2021-02-27 11:30:00')]
-        return df
 
-
-class MainApp(object):
-    def __init__(self):
-        self._wm = Waschmaschine()
-
-    def train(self, src='db'):
-        if src.lower() == 'db':
-            self._wm.read_from_sql()
-        else:
-            self._wm.load_cache_file()
-
-        print(self._wm.df_raw)
-        self._wm.create_model()
-        self._wm.dump_model()
-
-    def predict(self, test=True):
-        if not test:
-            self._wm.read_from_sql(date_from=datetime.date.today())
-        else:
-            df = self._wm.load_cache_file()
-            self._wm.df_raw = df[(df['timestamp'] >= '2021-02-27 00:00:00')
-                                 & (df['timestamp'] <= '2021-02-27 11:30:00')]
-
-        print("Last record:")
-        print(self._wm.df_raw.tail(1))
-
-        # Session is only running if last value is greater than 1:
-        if self._wm.df_raw.tail(1)[['value']].values[0] <= 1:
-            return
+def list_all():
+    wm = Waschmaschine()
+    wm.load_cache_file()
+    wm.split_into_sessions()
+    wm.drop_short_sessions()
+    wm.list_sessions()
 
 
 if __name__ == '__main__':
-    # date_start = datetime.date(2021, 1, 8)
-    # date_end = datetime.date(2021, 1, 9)
+    # list_all()
 
-    # fire.Fire(MainApp)
-
-    wm = Waschmaschine()
-    wm_runtime = Waschmaschine()
-    wm_runtime.df_raw = wm.get_test_data()
-    print(wm_runtime.df_raw)
-    df = wm_runtime.get_last_session()
-    data = wm_runtime.transform_session(df, config.n_features)
-    data_x = data # [data[0], data[1]]
-    print(data_x)
-
-    cols_features = ['betrieb'] + list(range(config.n_features))
-    df_x = pd.DataFrame(data_x, columns=cols_features)
-    print(df_x)
+    run = Waschmaschine()
+    df = run.get_running_session(src='test')
+    print(df)
+    data = run.transform_session(df)
+    print(data)
+    # run.split_into_sessions()
+    # for idx, session in enumerate(run.sessions):
+    #     print(idx, session.iloc[0, 0], len(session))
