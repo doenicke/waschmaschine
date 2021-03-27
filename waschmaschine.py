@@ -26,75 +26,10 @@ class Waschmaschine:
         self.model = None
         self.model_filename = config.model_file
 
-    def establish_db_connection(self):
-        if not self.db_connection:
-            print("Establishing DB connection...")
-            # db_connection_str = 'mysql+pymysql://mysql_user:mysql_password@mysql_host/mysql_db'
-            self.db_connection = create_engine(config.db_connection_str)
 
-    def read_from_sql(self, date_from=None, date_til=None):
-        """Read raw Watt data from MySQL database and write it into pickle cache file."""
-        query = "SELECT timestamp, CAST(value AS DECIMAL(8,1)) AS value FROM history " \
-                "WHERE device = 'Gosund_Waschmaschine' AND value > 0 "
-        if date_from:
-            query += f"AND timestamp >= '{str(date_from)}' "
-        if date_til:
-            query += f"AND timestamp <= '{str(date_til)}' "
-        query += "ORDER BY timestamp ASC"
 
-        print("Reading data from MySQL database...")
-        print(query)
-        self.establish_db_connection()
-        self.df_orig = pd.read_sql(query, con=self.db_connection)
-        return self.df_orig
-
-    def load_cache_file(self):
-        print(f"Reading data from cache file {self.cache_filename}...")
-        self.df_orig = pd.read_pickle(self.cache_filename)
-        return self.df_orig
-
-    def write_cache_file(self):
-        print("Writing cache file...", end='')
-        self.df_orig.to_pickle(self.cache_filename)
-        print(" {} ({:.1f} kB)".format(self.cache_filename, os.path.getsize(self.cache_filename) / 1024))
-
-    def split_into_sessions(self):
-        sessions = []
-        session = []
-
-        for index, row in self.df_orig.iterrows():
-            if row['value'] > config.standby_watt:
-                session.append(row)
-            elif len(session) > 0:
-                sessions.append(pd.DataFrame(session))
-                session = []
-
-        if len(session) > 0:
-            sessions.append(pd.DataFrame(session))
-        self.sessions = sessions
-        return sessions
-
-    def drop_short_sessions(self):
-        sessions_new = []
-        for session in self.sessions:
-            duration = len(session)
-            if duration >= config.duration_min:
-                sessions_new.append(session)
-        self.sessions = sessions_new
-        return sessions_new
-
-    def mean_duration(self):
-        m = 0
-        for session in self.sessions:
-            m += len(session)
-        return m / len(self.sessions)
-
-    def list_sessions(self):
-        for idx, session in enumerate(self.sessions):
-            print(idx, session.iloc[0, 0], len(session))
-
-    def get_running_session(self, src='sql'):
-        if src == 'sql':
+    def get_running_session(self, test=False):
+        if not test:
             self.establish_db_connection()
             from_timestamp = datetime.now() - timedelta(hours=3)
             # from_str = from_timestamp.strftime('%Y-%m-%d %H:%M:%S')
@@ -188,10 +123,10 @@ def list_all():
 if __name__ == '__main__':
     # list_all()
 
-    run = Waschmaschine()
-    df = run.get_running_session(src='test')
+    wm = Waschmaschine()
+    df = wm.get_running_session(test=True)
     print(df)
-    data = run.transform_session(df)
+    data = wm.transform_session(df)
     print(data)
     # run.split_into_sessions()
     # for idx, session in enumerate(run.sessions):
