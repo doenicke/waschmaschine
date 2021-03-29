@@ -1,17 +1,20 @@
 import pandas as pd
-import config
-import logging
 import os
-from sqlalchemy import create_engine
+import sqlalchemy
+import logging
+import config
+import logging_cfg
 
-logging.basicConfig()
-logger = logging.getLogger(__name__)
+logging_cfg.init_config()
+logger = logging.getLogger()
 
 
 def establish_db_connection():
     print("Establishing DB connection...")
     # db_connection_str = 'mysql+pymysql://mysql_user:mysql_password@mysql_host/mysql_db'
-    return create_engine(config.db_connection_str)
+    con_str = config.db_connection_str
+    logger.debug(con_str)
+    return sqlalchemy.create_engine(con_str)
 
 
 def read_from_sql(date_from=None, date_til=None):
@@ -29,9 +32,10 @@ def read_from_sql(date_from=None, date_til=None):
     query += "ORDER BY timestamp ASC"
 
     print("Reading data from MySQL database...")
-    print(query)
-    db_connection = establish_db_connection()
-    df = pd.read_sql(query, con=db_connection)
+    con_str = config.db_connection_str
+    logger.debug(f"DB connection string: {con_str}")
+    logger.info(f"SQL query: {query}")
+    df = pd.read_sql(query, con=sqlalchemy.create_engine(con_str))
     return df
 
 
@@ -48,6 +52,8 @@ def write_cache_file(df, pkl_file):
 
 
 if __name__ == '__main__':
+    logger.setLevel(logging.DEBUG)
+
     df = read_from_sql()
     print(df)
     write_cache_file(df, config.db_cache_file)

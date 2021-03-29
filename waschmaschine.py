@@ -44,22 +44,19 @@ class Waschmaschine:
             return self.sessions[-1]
 
     @staticmethod
-    def transform_session(df_src, n_features=0):
+    def transform_session(df, n_features):
         """
         Jeder Waschvorgang wird in n Abschnitte unterteilt.
         Jeder Abschnitt ist dann n Minuten lang.
         Hinzu kommt noch das Feature der Betriebszeit.
 
-        :param df_src:
+        :param df:
         :param n_features: Anzahl der Features mit Messwerten
         :return:
         """
-        if n_features == 0:
-            n_features = config.n_features
-
         data_list = []
-        for row in range(len(df_src) - n_features + 1):
-            df_tmp = df_src.iloc[row:row + n_features]
+        for row in range(len(df) - n_features + 1):
+            df_tmp = df.iloc[row:row + n_features]
             # print(df_tmp)
             row = [list(df_tmp['betrieb'])[-1]] + list(df_tmp['watt']) + [list(df_tmp['rest'])[-1]]
             # print(row)
